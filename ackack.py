@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 """AckAck acknowledgements generator."""
 
-import getopt
 import codecs
 import os
 import plistlib
 import re
 import sys
+from argparse import ArgumentParser
 
 VERSION = '2.0'
 
@@ -15,81 +15,114 @@ def main():
     """Main entry point of application."""
 
     # Process input arguments
-    try:
-        opts, _ = getopt.getopt(
-            sys.argv[1:],
-            'hqvni:o:d:',
-            ['help', 'quiet', 'version', 'no-clean',
-             'input=', 'output=', 'max-depth=']
-        )
+    parser = ArgumentParser(
+        description="AckAck " + VERSION + " - Acknowledgements Plist Generator"
+                    "Generates a Settings.plist for iOS based on your Carthage or CocoaPods frameworks."
+                    "Visit https://github.com/Building42/AckAck for more information.",
+        epilog="If you run without any options, it will try to find the folders for you. "
+               "This usually works fine if the script is in the project root or in a Scripts subfolder.")
+    parser.add_argument(
+        "--version", "-v",
+        help="dispays the version information",
+        action="store_true"
+    )
+    parser.add_argument(
+        "--quiet", "-q",
+        help="do not generate any output unless there are errors",
+        action="store_true"
+    )
+    parser.add_argument(
+        "--input", "-i",
+        help="manually provide the path to the input folder(s), e.g. Carthage/Checkouts",
+        nargs='+'
+    )
+    parser.add_argument(
+        "--output", "-o",
+        help="manually provide the path to the output folder, e.g. MyProject/Settings.bundle"
+    )
+    parser.add_argument(
+        "--no-clean", "-n",
+        help="do not remove existing license plists",
+        action="store_true"
+    )
+    parser.add_argument(
+        "--max-depth", "-d",
+        help="specify the maximum folder depth to look for licenses",
+        type=int
+    )
 
-    except getopt.GetoptError as err:
-        print str(err)
-        print ''
-        show_help()
-        sys.exit(2)
+    args = parser.parse_args()
 
     # Arguments
-    input_folder = None
+    input_folders = None
     output_folder = None
     max_depth = 1
     clean_up = True
     quiet = False
 
-    # Handle input arguments
-    for option, arg in opts:
-        if option in ("-h", "--help"):
-            show_help()
-            sys.exit()
-        elif option in ("-q", "--quiet"):
-            quiet = True
-        elif option in ("-v", "--version"):
-            print 'AckAck ' + VERSION
-            sys.exit()
-        elif option in ("-i", "--input"):
-            input_folder = arg
-        elif option in ("-o", "--output"):
-            output_folder = arg
-        elif option in ("-d", "--max-depth"):
-            max_depth = int(arg)
-        elif option in ("-n", "--no-clean"):
-            clean_up = False
-        else:
-            assert False, "unhandled option"
+    if args.version:
+        print 'AckAck ' + VERSION
+        sys.exit()
 
-    # No input folder? Find it
-    if input_folder is None:
-        input_folder = find_input_folder(quiet)
+    if args.quiet:
+        quiet = True
+
+    if args.input:
+        input_folders = args.input
+
+    if args.output:
+        output_folder = args.output
+
+    if args.max_depth:
+        max_depth = args.max_depth
+
+    if args.no_clean:
+        clean_up = False
+
+    # No input folder(s)? Find them
+    if not input_folders:
+        input_folders = find_input_folders(quiet)
 
     # No output folder? Find it
-    if output_folder is None:
+    if not output_folder:
         output_folder = find_output_folder(quiet)
 
     # Generate the acknowledgements
-    generate(input_folder, output_folder, max_depth, clean_up, quiet)
+    generate(input_folders, output_folder, max_depth, clean_up, quiet)
 
 
-def find_input_folder(quiet):
+def find_input_folders(quiet):
     """Finds the input folder based on the location of the Carthage folder."""
 
     # Find the Carthage Checkouts folder
-    input_folder = find_folder(os.getcwd(), 'Carthage/Checkouts')
+    carthage_folder = find_folder(os.getcwd(), 'Carthage/Checkouts')
 
-    # Otherwise look for the CocoaPods Pods folder
-    if input_folder is None:
-        input_folder = find_folder(os.getcwd(), 'Pods')
+    # Look for the CocoaPods Pods folder
+    cocoapods_folder = find_folder(os.getcwd(), 'Pods')
+
+    input_folders = []
+    if carthage_folder and os.path.isdir(carthage_folder):
+        input_folders.append(carthage_folder)
+    if cocoapods_folder and os.path.isdir(cocoapods_folder):
+        input_folders.append(cocoapods_folder)
 
     # Still no input folder?
-    if input_folder is None:
-        print 'Input folder could not be detected, please specify it with -i or --input'
+    if not input_folders and not carthage_folder and not cocoapods_folder:
+        print 'Input folder(s) could not be detected, please specify it with -i or --input'
         sys.exit(2)
-    elif not os.path.isdir(input_folder):
-        print 'Input folder ' + input_folder + " doesn't exist or is not a folder"
+    elif not input_folders and (carthage_folder or cocoapods_folder):
+        folders_as_files = []
+        if carthage_folder:
+            folders_as_files.append(carthage_folder)
+        if cocoapods_folder:
+            folders_as_files.append(cocoapods_folder)
+
+        print "Input folder(s) {} doesn't exist or is not a folder".format(' and '.join(folders_as_files))
         sys.exit(2)
     elif not quiet:
-        print 'Input folder: ' + str(input_folder)
+        print 'Input folder(s): {}'.format(' and '.join(input_folders))
 
-    return input_folder
+    return input_folders
 
 
 def find_output_folder(quiet):
@@ -109,32 +142,6 @@ def find_output_folder(quiet):
         print 'Output folder: ' + str(output_folder)
 
     return output_folder
-
-
-def show_help():
-    """Shows the help information."""
-
-    print 'OVERVIEW:'
-    print '  AckAck ' + VERSION + ' - Acknowledgements Plist Generator'
-    print ''
-    print '  Generates a Settings.plist for iOS based on your Carthage or CocoaPods frameworks.'
-    print '  Visit https://github.com/Building42/AckAck for more information.'
-    print ''
-    print 'USAGE:'
-    print ' ./ackack.py [options]'
-    print ''
-    print 'OPTIONS:'
-    print '  -i or --input        manually provide the path to the input folder, e.g. Carthage/Checkouts'
-    print '  -o or --output       manually provide the path to the output folder, e.g. MyProject/Settings.bundle'
-    print '  -d or --depth        specify the maximum folder depth to look for licenses'
-    print '  -n or --no-clean     do not remove existing license plists'
-    print ''
-    print '  -h or --help         displays the help information'
-    print '  -q or --quiet        do not generate any output unless there are errors'
-    print '  -v or --version      dispays the version information'
-    print ''
-    print 'If you run without any options, it will try to find the folders for you.'
-    print 'This usually works fine if the script is in the project root or in a Scripts subfolder.'
 
 
 def find_folder(base_path, search):
@@ -167,7 +174,7 @@ def find_folder(base_path, search):
     return None
 
 
-def generate(input_folder, output_folder, max_depth, clean_up, quiet):
+def generate(input_folders, output_folder, max_depth, clean_up, quiet):
     """Generates the acknowledgements."""
     frameworks = []
 
@@ -186,26 +193,27 @@ def generate(input_folder, output_folder, max_depth, clean_up, quiet):
     if not quiet:
         print 'Searching licenses...'
 
-    for root, _, files in os.walk(input_folder):
-        for file_name in files:
-            # Igore licenses in deep folders
-            relative_path = os.path.relpath(root, input_folder)
-            if relative_path.count(os.path.sep) >= max_depth:
-                continue
+    for input_folder in input_folders:
+        for root, _, files in os.walk(input_folder):
+            for file_name in files:
+                # Igore licenses in deep folders
+                relative_path = os.path.relpath(root, input_folder)
+                if relative_path.count(os.path.sep) >= max_depth:
+                    continue
 
-            # Look for license files
-            if file_name.endswith('LICENSE') or file_name.endswith('LICENSE.txt'):
-                license_path = os.path.join(root, file_name)
+                # Look for license files
+                if file_name.endswith('LICENSE') or file_name.endswith('LICENSE.txt'):
+                    license_path = os.path.join(root, file_name)
 
-                # We found a license
-                framework = os.path.basename(os.path.dirname(license_path))
-                frameworks.append(framework)
-                if not quiet:
-                    print 'Creating license plist for ' + framework
+                    # We found a license
+                    framework = os.path.basename(os.path.dirname(license_path))
+                    frameworks.append(framework)
+                    if not quiet:
+                        print 'Creating license plist for ' + framework
 
-                # Generate a plist
-                plist_path = os.path.join(plists_path, framework + '.plist')
-                create_license_plist(license_path, plist_path)
+                    # Generate a plist
+                    plist_path = os.path.join(plists_path, framework + '.plist')
+                    create_license_plist(license_path, plist_path)
 
     # Did we find any licenses?
     if not quiet and not frameworks:
