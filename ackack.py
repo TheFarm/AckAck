@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 """AckAck acknowledgements generator."""
 
+from argparse import ArgumentParser
 import codecs
 import os
 import plistlib
 import re
 import sys
-from argparse import ArgumentParser
 
 VERSION = '2.0'
 
@@ -20,7 +20,8 @@ def main():
                     "Generates a Settings.plist for iOS based on your Carthage or CocoaPods frameworks."
                     "Visit https://github.com/Building42/AckAck for more information.",
         epilog="If you run without any options, it will try to find the folders for you. "
-               "This usually works fine if the script is in the project root or in a Scripts subfolder.")
+               "This usually works fine if the script is in the project root or in a Scripts subfolder."
+    )
     parser.add_argument(
         "--version", "-v",
         help="dispays the version information",
@@ -196,7 +197,7 @@ def generate(input_folders, output_folder, max_depth, clean_up, quiet):
     for input_folder in input_folders:
         for root, _, files in os.walk(input_folder):
             for file_name in files:
-                # Igore licenses in deep folders
+                # Ignore licenses in deep folders
                 relative_path = os.path.relpath(root, input_folder)
                 if relative_path.count(os.path.sep) >= max_depth:
                     continue
